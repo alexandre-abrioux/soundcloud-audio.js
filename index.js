@@ -55,6 +55,7 @@ function SoundCloud(oauthToken, apiUrl) {
   this.duration = 0;
 
   this.audio = document.createElement('audio');
+  this._canPlayHls = this.audio.canPlayType('application/vnd.apple.mpegURL');
 }
 
 SoundCloud.prototype.resolve = function(url, callback) {
@@ -177,12 +178,23 @@ SoundCloud.prototype.preload = function(streamUrl, preloadType) {
   this.audio.src = streamUrl;
 };
 
+SoundCloud.prototype._loadStream = function(src) {
+  return fetch(src, {
+    headers: {
+      Authorization: `OAuth ${this._oauthToken}`
+    }
+  })
+    .then(response => response.blob())
+    .then(blob => URL.createObjectURL(blob));
+};
+
 SoundCloud.prototype._play = function(src) {
-  if (src !== this.audio.src) {
-    this.audio.src = src;
-  }
+  if (src === this.playing) return;
   this.playing = src;
-  return this.audio.play();
+  this._loadStream(src).then(objectUrl => {
+    this.audio.src = objectUrl;
+    return this.audio.play();
+  });
 };
 
 SoundCloud.prototype._playTrack = function(track) {
@@ -190,7 +202,11 @@ SoundCloud.prototype._playTrack = function(track) {
   this._json(
     this._baseUrl + '/tracks/' + track.id + '/streams',
     function(resp) {
-      $this._play(resp.http_mp3_128_url);
+      $this._play(
+        $this._canPlayHls
+          ? resp.hls_aac_160_url || resp.hls_aac_96_url || resp.hls_mp3_128_url
+          : resp.http_mp3_128_url
+      );
     },
     function(errorMessage) {
       $this.stop();
